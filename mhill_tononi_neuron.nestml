@@ -33,8 +33,8 @@ neuron mhill_tononi_neuron:
         # VDCC (R-type), assuming sphere for spine head
         gca_bar_abs_VDCC = gca_bar_VDCC * 4(um2)*pi*(3(1/um3)/4*volume_CR*1/PI)^(2/3)
         
-        minf_VDCC    = 1 / (1 + exp(((vhm_VDCC - ljp_VDCC) - V_m) / km_VDCC))
-        hinf_VDCC    = 1 / (1 + exp(((vhh_VDCC - ljp_VDCC) - V_m) / kh_VDCC))
+        minf_VDCC    = 1 / (1 + exp((vhm_VDCC - V_m) / km_VDCC))
+        hinf_VDCC    = 1 / (1 + exp((vhh_VDCC - V_m) / kh_VDCC))
         m_VDCC'      = (minf_VDCC-m_VDCC)/mtau_VDCC
         h_VDCC'      = (hinf_VDCC-h_VDCC)/htau_VDCC
         
