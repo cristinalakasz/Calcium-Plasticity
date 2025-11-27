@@ -7,7 +7,7 @@ neuron mhill_tononi_neuron:
         cstel real = 0
         AMPA_g_peak nS = 0.8 nS
         g_bool boolean = false
-        V_m mV = ( g_NaL * E_Na + g_KL * E_K ) / ( g_NaL + g_KL )   # Baseline value for Vm 
+        V_m mV = ( g_NaL * E_Na + g_KL * E_K ) / ( g_NaL + g_KL )   # Baseline value for Vm  
         Theta mV = Theta_eq 
         
         # Synaptic conductances
@@ -24,14 +24,31 @@ neuron mhill_tononi_neuron:
         # Artifical excitation
         inline I_syn_exc pA = convolve(g_exc, I_EXC) * nS * ( V_m - E_Na )
 
-        # AMPA and NMDA currents
+        # AMPA and NMDA currents --> possibile inserire influenza del numero di vescicole rilasciate (N_rel)
         inline I_syn_ampa pA = AMPA_g_peak * convolve(g_AMPA, AMPA) * ( V_m - AMPA_E_rev ) 
-        recordable inline I_syn_nmda pA = convolve(g_NMDA, NMDA) * nS * ( V_m - Eca_syn_nmda ) / ( 1 + exp( ( NMDA_Vact - V_m ) / NMDA_Sact ) ) 
-        inline I_syn pA = I_syn_ampa + I_syn_nmda
+        recordable inline I_syn_nmda pA = convolve(g_NMDA, NMDA) * nS * ( V_m - Eca_syn_nmda ) / ( 1 + exp( ( NMDA_Vact - V_m ) / NMDA_Sact ) )  
+        
+        
+        # VDCC currents
+        # VDCC (R-type), assuming sphere for spine head
+        gca_bar_abs_VDCC = gca_bar_VDCC * 4(um2)*pi*(3(1/um3)/4*volume_CR*1/PI)^(2/3)
+        
+        minf_VDCC    = 1 / (1 + exp(((vhm_VDCC - ljp_VDCC) - V_m) / km_VDCC))
+        hinf_VDCC    = 1 / (1 + exp(((vhh_VDCC - ljp_VDCC) - V_m) / kh_VDCC))
+        m_VDCC'      = (minf_VDCC-m_VDCC)/mtau_VDCC
+        h_VDCC'      = (hinf_VDCC-h_VDCC)/htau_VDCC
+        
+        gca_VDCC = (1e-3) * gca_bar_abs_VDCC * m_VDCC * m_VDCC * h_VDCC
+        
+        I_syn_Ca_VDCC pA = gca_VDCC*(v-Eca_syn_VDCC)
+        
+        # Total current
+        inline I_syn pA = I_syn_ampa + I_syn_nmda + I_syn_Ca_VDCC 
 
         # Sodium and potassium currents
         inline I_Na pA = g_NaL * ( V_m - E_Na )
         inline I_K pA = g_KL * ( V_m - E_K )
+         
         
         # Potassium repolarizing current
         recordable inline I_spike mV = (g_spike) ? -( V_m - E_K ) / Tau_spike * ms : 0 mV
@@ -58,6 +75,7 @@ neuron mhill_tononi_neuron:
     parameters:
         # Neuron parameters
         Eca_syn_nmda mV = 40 mV
+        Eca_syn_VDCC mV = 120 mV
         E_exc mV = 0 mV                 # Excitatory reversal potential
         E_Rest mV = -65 mV
         E_Na mV = 30.0 mV #30
@@ -84,6 +102,17 @@ neuron mhill_tononi_neuron:
         NMDA_E_rev mV = 0.0 mV          # reversal potential
         NMDA_Vact mV = -58.0 mV         # inactive for V << Vact, inflection of sigmoid
         NMDA_Sact mV = 2.5 mV           # scale of inactivation
+        
+        
+        # VDCC PARAMETERS 
+        volume_CR um3 = 0.087 um3            # From spine data by Ruth Benavides-Piccione (unpublished)
+        gca_bar_VDCC nS/um2 = 0.0744 nS/um2  # Density spines: 20 um-2 (Sabatini 2000), unitary conductance VGCC 3.72 pS (Bartol 2015)
+        vhm_VDCC mV = -5.9 mV                # v 1/2 for act, Magee and Johnston 1995 (corrected for m*m)
+        km_VDCC mV = 9.5 mV                  # act slope, Magee and Johnston 1995 (corrected for m*m)
+        vhh_VDCC mV = -39 mV                 # v 1/2 for inact, Magee and Johnston 1995
+        kh_VDCC mV = -9.2 mV                 # inact, Magee and Johnston 1995
+        mtau_VDCC ms = 1 ms                  # max time constant (guess)
+        htau_VDCC ms = 27 ms                 # max time constant 100*0.27
         
         # Constant external input current
         I_e pA = 0 pA
