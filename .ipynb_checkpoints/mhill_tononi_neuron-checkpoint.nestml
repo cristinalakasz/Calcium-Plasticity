@@ -33,8 +33,8 @@ neuron mhill_tononi_neuron:
         # VDCC (R-type), assuming sphere for spine head
         gca_bar_abs_VDCC = gca_bar_VDCC * 4(um2)*pi*(3(1/um3)/4*volume_CR*1/PI)^(2/3)
         
-        minf_VDCC    = 1 / (1 + exp(((vhm_VDCC - ljp_VDCC) - V_m) / km_VDCC))
-        hinf_VDCC    = 1 / (1 + exp(((vhh_VDCC - ljp_VDCC) - V_m) / kh_VDCC))
+        minf_VDCC    = 1 / (1 + exp((vhm_VDCC - V_m) / km_VDCC))
+        hinf_VDCC    = 1 / (1 + exp((vhh_VDCC - V_m) / kh_VDCC))
         m_VDCC'      = (minf_VDCC-m_VDCC)/mtau_VDCC
         h_VDCC'      = (hinf_VDCC-h_VDCC)/htau_VDCC
         
@@ -72,6 +72,13 @@ neuron mhill_tononi_neuron:
         kernel g_exc = (e/tau_syn_exc) * t * exp(-t/tau_syn_exc)
                
 
+        # Postsynaptic Ca2+ dynamics
+        Ca_i' = - (I_syn_nmda + I_syn_Ca_VDCC)*gamma_ca_CR/(volume_CR*2*FARADAY) - (Ca_i - min_ca_CR)/tau_ca_CR
+        
+        # Long-term synaptic plasticity
+        effcai_GB' = - effcai_GB/tau_effca_GB + (Ca_i - min_ca_CR)
+        rho_GB' = ( - rho_GB*(1 - rho_GB)*(rho_star_GB - rho_GB) + pot_GB*gamma_p_GB*(1 - rho_GB) - dep_GB*gamma_d_GB*rho_GB ) / ((1e3)*tau_ind_GB)
+
     parameters:
         # Neuron parameters
         Eca_syn_nmda mV = 40 mV
@@ -103,8 +110,7 @@ neuron mhill_tononi_neuron:
         NMDA_Vact mV = -58.0 mV         # inactive for V << Vact, inflection of sigmoid
         NMDA_Sact mV = 2.5 mV           # scale of inactivation
         
-        
-        # VDCC PARAMETERS 
+        # VDCC parameters 
         volume_CR um3 = 0.087 um3            # From spine data by Ruth Benavides-Piccione (unpublished)
         gca_bar_VDCC nS/um2 = 0.0744 nS/um2  # Density spines: 20 um-2 (Sabatini 2000), unitary conductance VGCC 3.72 pS (Bartol 2015)
         vhm_VDCC mV = -5.9 mV                # v 1/2 for act, Magee and Johnston 1995 (corrected for m*m)
@@ -113,6 +119,24 @@ neuron mhill_tononi_neuron:
         kh_VDCC mV = -9.2 mV                 # inact, Magee and Johnston 1995
         mtau_VDCC ms = 1 ms                  # max time constant (guess)
         htau_VDCC ms = 27 ms                 # max time constant 100*0.27
+        
+        # Postsynaptic Ca2+ dynamics
+        gamma_ca_CR real = 0.04      # Percent of free calcium (not buffered), Sabatini et al 2002: kappa_e = 24+-11 (also 14 (2-31) or 22 (18-33))
+        tau_ca_CR ms = 12 ms         # Rate of removal of calcium, Sabatini et al 2002: 14ms (12-20ms)
+        min_ca_CR mM = 70e-6 mM      # Sabatini et al 2002: 70+-29 nM, per AP: 1.1 (0.6-8.2) uM = 1100 e-6 mM = 1100 nM
+        cao_CR mM = 2.0 mM           # Extracellular calcium concentration in slices
+        FARADAY s*A/M = 96485.3321 s*A/M
+        
+        # Long-term synaptic plasticity
+        rho_star_GB real = 0.5
+        tau_ind_GB s = 70 s
+        tau_exp_GB s = 100 s
+        tau_effca_GB ms = 200 ms
+        gamma_d_GB real = 100
+        gamma_p_GB real = 450
+        theta_d_GB us/dm3 = 0.006 us/dm3
+        theta_p_GB us/dm3 = 0.001 us/dm3 
+        rho0_GB real = 0 
         
         # Constant external input current
         I_e pA = 0 pA
