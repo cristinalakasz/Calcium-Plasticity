@@ -10,6 +10,11 @@ neuron mhill_tononi_neuron:
         V_m mV = ( g_NaL * E_Na + g_KL * E_K ) / ( g_NaL + g_KL )   # Baseline value for Vm  
         Theta mV = Theta_eq 
         
+        # inizializzo m e h a riposo quindi con V_m = V_rest e m(t=0)= minf(V_rest) e h(t=0)= hinf(V_rest), non sono sicuro che funzioni così 
+        m_VDCC real = 1 / (1 + exp((vhm_VDCC - V_m) / km_VDCC))
+        h_VDCC real = 1 / (1 + exp((vhh_VDCC - V_m) / kh_VDCC))
+        
+        
         # Synaptic conductances
         g_AMPA real = 0
         g_NMDA real = 0
@@ -31,19 +36,20 @@ neuron mhill_tononi_neuron:
         
         # VDCC currents
         # VDCC (R-type), assuming sphere for spine head
-        gca_bar_abs_VDCC = gca_bar_VDCC * 4(um2)*pi*(3(1/um3)/4*volume_CR*1/PI)^(2/3)
+        inline VDCC_g_peak nS = VDCC_g_bar * 4(um2)*pi*(3(1/um3)/4*volume_CR*1/PI)^(2/3)
         
-        minf_VDCC    = 1 / (1 + exp((vhm_VDCC - V_m) / km_VDCC))
-        hinf_VDCC    = 1 / (1 + exp((vhh_VDCC - V_m) / kh_VDCC))
-        m_VDCC'      = (minf_VDCC-m_VDCC)/mtau_VDCC
-        h_VDCC'      = (hinf_VDCC-h_VDCC)/htau_VDCC
+        inline minf_VDCC = 1 / (1 + exp((vhm_VDCC - V_m) / km_VDCC))
+        inline hinf_VDCC = 1 / (1 + exp((vhh_VDCC - V_m) / kh_VDCC))
         
-        gca_VDCC = (1e-3) * gca_bar_abs_VDCC * m_VDCC * m_VDCC * h_VDCC
+        m_VDCC' = (minf_VDCC-m_VDCC)/mtau_VDCC
+        h_VDCC' = (hinf_VDCC-h_VDCC)/htau_VDCC
         
-        I_syn_Ca_VDCC pA = gca_VDCC*(v-Eca_syn_VDCC)
+        inline g_VDCC nS = (1e-3) * VDCC_g_peak * m_VDCC * m_VDCC * h_VDCC
+        
+        inline I_syn_VDCC pA = g_VDCC*(v-Eca_syn_VDCC)
         
         # Total current
-        inline I_syn pA = I_syn_ampa + I_syn_nmda + I_syn_Ca_VDCC 
+        inline I_syn pA = I_syn_ampa + I_syn_nmda + I_syn_VDCC 
 
         # Sodium and potassium currents
         inline I_Na pA = g_NaL * ( V_m - E_Na )
@@ -73,11 +79,12 @@ neuron mhill_tononi_neuron:
                
 
         # Postsynaptic Ca2+ dynamics
-        Ca_i' = - (I_syn_nmda + I_syn_Ca_VDCC)*gamma_ca_CR/(volume_CR*2*FARADAY) - (Ca_i - min_ca_CR)/tau_ca_CR
+        Ca_i' = - (I_syn_nmda + I_syn_VDCC)*gamma_ca_CR/(volume_CR*2*FARADAY) - (Ca_i - min_ca_CR)/tau_ca_CR
         
         # Long-term synaptic plasticity
         effcai_GB' = - effcai_GB/tau_effca_GB + (Ca_i - min_ca_CR)
         rho_GB' = ( - rho_GB*(1 - rho_GB)*(rho_star_GB - rho_GB) + pot_GB*gamma_p_GB*(1 - rho_GB) - dep_GB*gamma_d_GB*rho_GB ) / ((1e3)*tau_ind_GB)
+
 
     parameters:
         # Neuron parameters
@@ -112,7 +119,7 @@ neuron mhill_tononi_neuron:
         
         # VDCC parameters 
         volume_CR um3 = 0.087 um3            # From spine data by Ruth Benavides-Piccione (unpublished)
-        gca_bar_VDCC nS/um2 = 0.0744 nS/um2  # Density spines: 20 um-2 (Sabatini 2000), unitary conductance VGCC 3.72 pS (Bartol 2015)
+        VDCC_g_bar nS/um2 = 0.0744 nS/um2  # Density spines: 20 um-2 (Sabatini 2000), unitary conductance VGCC 3.72 pS (Bartol 2015)
         vhm_VDCC mV = -5.9 mV                # v 1/2 for act, Magee and Johnston 1995 (corrected for m*m)
         km_VDCC mV = 9.5 mV                  # act slope, Magee and Johnston 1995 (corrected for m*m)
         vhh_VDCC mV = -39 mV                 # v 1/2 for inact, Magee and Johnston 1995
