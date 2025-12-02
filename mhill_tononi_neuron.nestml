@@ -20,6 +20,12 @@ neuron mhill_tononi_neuron:
         g_NMDA real = 0
         g_AMPA$ real = AMPAInitialValue
         g_NMDA$ real = NMDAInitialValue
+        
+        # we have to explicitly declare these as State Variables so the solver can track them over time.
+        # Plasticity State Variables
+        effcai_GB real = 0   # Effective Calcium integration
+        rho_GB real = rho0_GB # Synaptic efficacy tracker
+        Ca_i mM = min_ca_CR   # Intracellular Calcium
 
     equations:
         #############
@@ -83,6 +89,12 @@ neuron mhill_tononi_neuron:
         
         # Long-term synaptic plasticity
         effcai_GB' = - effcai_GB/tau_effca_GB + (Ca_i - min_ca_CR)
+        
+        # LOGIC FROM NEURON WATCHERS
+        # If effcai is above theta, the variable is 1.0, else 0.0.
+        inline dep_GB real = if effcai_GB > theta_d_GB: 1.0 else: 0.0
+        inline pot_GB real = if effcai_GB > theta_p_GB: 1.0 else: 0.0
+        
         rho_GB' = ( - rho_GB*(1 - rho_GB)*(rho_star_GB - rho_GB) + pot_GB*gamma_p_GB*(1 - rho_GB) - dep_GB*gamma_d_GB*rho_GB ) / ((1e3)*tau_ind_GB)
 
 
