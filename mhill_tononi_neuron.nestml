@@ -190,6 +190,8 @@ neuron mhill_tononi_neuron:
 
     output:
         spike
+        rho_out = rho_GB
+        vesc = U*N
 
 
     update:
