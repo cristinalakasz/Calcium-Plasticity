@@ -10,10 +10,9 @@ neuron mhill_tononi_neuron:
         V_m mV = ( g_NaL * E_Na + g_KL * E_K ) / ( g_NaL + g_KL )   # Baseline value for Vm  
         Theta mV = Theta_eq 
         
-        # inizializzo m e h a riposo quindi con V_m = V_rest e m(t=0)= minf(V_rest) e h(t=0)= hinf(V_rest), non sono sicuro che funzioni così 
+        # inizializzo m e h a riposo quindi con V_m = V_rest e m(t=0)= minf(V_rest) e h(t=0)= hinf(V_rest)
         m_VDCC real = 1 / (1 + exp((vhm_VDCC - V_m) / km_VDCC))
         h_VDCC real = 1 / (1 + exp((vhh_VDCC - V_m) / kh_VDCC))
-        
         
         # Synaptic conductances
         g_AMPA real = 0
@@ -23,9 +22,10 @@ neuron mhill_tononi_neuron:
         
         # we have to explicitly declare these as State Variables so the solver can track them over time.
         # Plasticity State Variables
-        effcai_GB real = 0   # Effective Calcium integration
+        Ca_star_GB nmol*us/(dm**3) = 0 nmol*us/(dm**3)  # Effective Calcium integration
         rho_GB real = rho0_GB # Synaptic efficacy tracker
-        Ca_i mM = min_ca_CR   # Intracellular Calcium
+        Ca_i nmol/(dm**3) = min_Ca_CR   # Intracellular Calcium
+
 
     equations:
         #############
@@ -35,24 +35,24 @@ neuron mhill_tononi_neuron:
         # Artifical excitation
         inline I_syn_exc pA = convolve(g_exc, I_EXC) * nS * ( V_m - E_Na )
 
-        # AMPA and NMDA currents --> possibile inserire influenza del numero di vescicole rilasciate (N_rel)
+        # AMPA and NMDA currents possibile inserire influenza del numero di vescicole rilasciate (N_rel)
         inline I_syn_ampa pA = AMPA_g_peak * convolve(g_AMPA, AMPA) * ( V_m - AMPA_E_rev ) 
         recordable inline I_syn_nmda pA = convolve(g_NMDA, NMDA) * nS * ( V_m - Eca_syn_nmda ) / ( 1 + exp( ( NMDA_Vact - V_m ) / NMDA_Sact ) )  
         
         
         # VDCC currents
-        # VDCC (R-type), assuming sphere for spine head
-        inline VDCC_g_peak nS = VDCC_g_bar * 4(um2)*pi*(3(1/um3)/4*volume_CR*1/PI)^(2/3)
+        # VDCC (R_type), assuming sphere for spine head
+        inline VDCC_g_peak nS = VDCC_g_bar * 4*(um**2)*p*(3*(1/(um**3))/4*volume_CR*1/p)**(2/3)
         
-        inline minf_VDCC = 1 / (1 + exp((vhm_VDCC - V_m) / km_VDCC))
-        inline hinf_VDCC = 1 / (1 + exp((vhh_VDCC - V_m) / kh_VDCC))
+        inline minf_VDCC real = 1 / (1 + exp((vhm_VDCC - V_m) / km_VDCC))
+        inline hinf_VDCC real = 1 / (1 + exp((vhh_VDCC - V_m) / kh_VDCC))
         
         m_VDCC' = (minf_VDCC-m_VDCC)/mtau_VDCC
         h_VDCC' = (hinf_VDCC-h_VDCC)/htau_VDCC
         
-        inline g_VDCC nS = (1e-3) * VDCC_g_peak * m_VDCC * m_VDCC * h_VDCC
+        inline g_VDCC nS = (10**(-3)) * VDCC_g_peak * m_VDCC * m_VDCC * h_VDCC
         
-        inline I_syn_VDCC pA = g_VDCC*(v-Eca_syn_VDCC)
+        inline I_syn_VDCC pA = g_VDCC*(V_m-Eca_syn_VDCC)
         
         # Total current
         inline I_syn pA = I_syn_ampa + I_syn_nmda + I_syn_VDCC 
@@ -84,22 +84,22 @@ neuron mhill_tononi_neuron:
         kernel g_exc = (e/tau_syn_exc) * t * exp(-t/tau_syn_exc)
                
 
-        # Postsynaptic Ca2+ dynamics
-        Ca_i' = - (I_syn_nmda + I_syn_VDCC)*gamma_ca_CR/(volume_CR*2*FARADAY) - (Ca_i - min_ca_CR)/tau_ca_CR
+        # Postsynaptic Ca dynamics
+        Ca_i' = - (I_syn_nmda + I_syn_VDCC)*gamma_Ca_CR/(volume_CR*2*FARADAY) - (Ca_i - min_Ca_CR)/tau_Ca_CR
         
-        # Long-term synaptic plasticity
-        effcai_GB' = - effcai_GB/tau_effca_GB + (Ca_i - min_ca_CR)
+        # Long_term synaptic plasticity
+        Ca_star_GB' = -(Ca_star_GB/tau_Ca_star_GB) + (Ca_i - min_Ca_CR)
         
         # LOGIC FROM NEURON WATCHERS
-        # If effcai is above theta, the variable is 1.0, else 0.0.
-        inline dep_GB real = if effcai_GB > theta_d_GB: 1.0 else: 0.0
-        inline pot_GB real = if effcai_GB > theta_p_GB: 1.0 else: 0.0
+        # If Ca_star is above theta, the variable is 1.0, else 0.0.
+        inline dep_GB real = Hfun(Ca_star_GB, theta_d_GB)
+        inline pot_GB real = Hfun(Ca_star_GB, theta_p_GB)
         
-        rho_GB' = ( - rho_GB*(1 - rho_GB)*(rho_star_GB - rho_GB) + pot_GB*gamma_p_GB*(1 - rho_GB) - dep_GB*gamma_d_GB*rho_GB ) / ((1e3)*tau_ind_GB)
+        rho_GB' = ( - rho_GB*(1 - rho_GB)*(rho_star_GB - rho_GB) + pot_GB*gamma_p_GB*(1 - rho_GB) - dep_GB*gamma_d_GB*rho_GB ) / ((10**3)*tau_ind_GB)
 
 
     parameters:
-        # Neuron parameters
+        # Neuron parameters 
         Eca_syn_nmda mV = 40 mV
         Eca_syn_VDCC mV = 120 mV
         E_exc mV = 0 mV                 # Excitatory reversal potential
@@ -130,8 +130,8 @@ neuron mhill_tononi_neuron:
         NMDA_Sact mV = 2.5 mV           # scale of inactivation
         
         # VDCC parameters 
-        volume_CR um3 = 0.087 um3            # From spine data by Ruth Benavides-Piccione (unpublished)
-        VDCC_g_bar nS/um2 = 0.0744 nS/um2  # Density spines: 20 um-2 (Sabatini 2000), unitary conductance VGCC 3.72 pS (Bartol 2015)
+        volume_CR um**3 = 0.087 um**3            # From spine data by Ruth Benavides-Piccione (unpublished)
+        VDCC_g_bar nS/(um**2) = 0.0744 nS/(um**2)  # Density spines: 20 um-2 (Sabatini 2000), unitary conductance VGCC 3.72 pS (Bartol 2015)
         vhm_VDCC mV = -5.9 mV                # v 1/2 for act, Magee and Johnston 1995 (corrected for m*m)
         km_VDCC mV = 9.5 mV                  # act slope, Magee and Johnston 1995 (corrected for m*m)
         vhh_VDCC mV = -39 mV                 # v 1/2 for inact, Magee and Johnston 1995
@@ -140,25 +140,27 @@ neuron mhill_tononi_neuron:
         htau_VDCC ms = 27 ms                 # max time constant 100*0.27
         
         # Postsynaptic Ca2+ dynamics
-        gamma_ca_CR real = 0.04      # Percent of free calcium (not buffered), Sabatini et al 2002: kappa_e = 24+-11 (also 14 (2-31) or 22 (18-33))
-        tau_ca_CR ms = 12 ms         # Rate of removal of calcium, Sabatini et al 2002: 14ms (12-20ms)
-        min_ca_CR mM = 70e-6 mM      # Sabatini et al 2002: 70+-29 nM, per AP: 1.1 (0.6-8.2) uM = 1100 e-6 mM = 1100 nM
-        cao_CR mM = 2.0 mM           # Extracellular calcium concentration in slices
-        FARADAY s*A/M = 96485.3321 s*A/M
+        gamma_Ca_CR real = 0.04      # Percent of free calcium (not buffered), Sabatini et al 2002: kappa_e = 24+-11 (also 14 (2-31) or 22 (18-33))
+        tau_Ca_CR ms = 12 ms         # Rate of removal of calcium, Sabatini et al 2002: 14ms (12-20ms)
+        min_Ca_CR nmol/(dm**3) = 70 nmol/(dm**3)      # Sabatini et al 2002: 70+-29 nM, per AP: 1.1 (0.6-8.2) uM = 1100 e-6 mM = 1100 nM
+        FARADAY C/mol = 96.4853321 C/mol
         
         # Long-term synaptic plasticity
         rho_star_GB real = 0.5
         tau_ind_GB s = 70 s
         tau_exp_GB s = 100 s
-        tau_effca_GB ms = 200 ms
+        tau_Ca_star_GB ms = 200 ms
         gamma_d_GB real = 100
         gamma_p_GB real = 450
-        theta_d_GB us/dm3 = 0.006 us/dm3
-        theta_p_GB us/dm3 = 0.001 us/dm3 
+        theta_d_GB nmol*us/(dm**3) = 0.006 nmol*us/(dm**3)
+        theta_p_GB nmol*us/(dm**3) = 0.001 nmol*us/(dm**3) 
         rho0_GB real = 0 
         
         # Constant external input current
         I_e pA = 0 pA
+        
+        #pi
+        p real = 3.141592653589793
 
 
     internals:
@@ -210,6 +212,8 @@ neuron mhill_tononi_neuron:
             return 1.0
         else:
             return 0.0
+
+
 
 
 
