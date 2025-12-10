@@ -20,11 +20,13 @@ neuron mhill_tononi_neuron:
         g_AMPA$ real = AMPAInitialValue
         g_NMDA$ real = NMDAInitialValue
         
-        # we have to explicitly declare these as State Variables so the solver can track them over time.
         # Plasticity State Variables
         Ca_star_GB nmol*us/(dm**3) = 0 nmol*us/(dm**3)  # Effective Calcium integration
         rho_GB real = rho0_GB # Synaptic efficacy tracker
         Ca_i nmol/(dm**3) = min_Ca_CR   # Intracellular Calcium
+        
+        # AMPAR Post-synaptic plasticity
+        G_AMPA_hat nS = AMPA_g_peak * ( 1 + rho0_GB * ( G_AMPA_pot_factor - 1 ) ) # initialized to the peak value checing if it starts as potentiated or depressed
 
 
     equations:
@@ -36,7 +38,7 @@ neuron mhill_tononi_neuron:
         inline I_syn_exc pA = convolve(g_exc, I_EXC) * nS * ( V_m - E_Na )
 
         # AMPA and NMDA currents possibile inserire influenza del numero di vescicole rilasciate (N_rel)
-        inline I_syn_ampa pA = AMPA_g_peak * convolve(g_AMPA, AMPA) * ( V_m - AMPA_E_rev ) 
+        inline I_syn_ampa pA = G_AMPA_hat * convolve(g_AMPA, AMPA) * ( V_m - AMPA_E_rev ) 
         recordable inline I_syn_nmda pA = convolve(g_NMDA, NMDA) * nS * ( V_m - Eca_syn_nmda ) / ( 1 + exp( ( NMDA_Vact - V_m ) / NMDA_Sact ) )  
         
         
@@ -96,6 +98,10 @@ neuron mhill_tononi_neuron:
         inline pot_GB real = Hfun(Ca_star_GB, theta_p_GB)
         
         rho_GB' = ( - rho_GB*(1 - rho_GB)*(rho_star_GB - rho_GB) + pot_GB*gamma_p_GB*(1 - rho_GB) - dep_GB*gamma_d_GB*rho_GB ) / ((10**3)*tau_ind_GB)
+        
+        #plasticity on g_AMPA
+        inline G_AMPA_target nS = G_AMPA_depr + rho_GB * ( G_AMPA_pot - G_AMPA_depr )
+        G_AMPA_hat' = ( G_AMPA_target - G_AMPA_hat ) / ( (10**3) * tau_change_GB )
 
 
     parameters:
@@ -120,6 +126,10 @@ neuron mhill_tononi_neuron:
         AMPA_E_rev mV = 0.0 mV          # reversal potential
         AMPA_Tau_1 ms = 0.5 ms          # rise time 0.5
         AMPA_Tau_2 ms = 2.4 ms          # decay time, Tau_1 < Tau_2 2.4
+        # LTP/LTD AMPA parameters (Chindemi et al. 2022)
+        tau_change_GB s = 100 s
+        G_AMPA_pot_factor real = 2.0     # G^p/G^d ~ 2 
+        
 
         # NMDA parameters
         NMDA_g_peak nS = 0.075 nS       # peak conductance
@@ -154,7 +164,8 @@ neuron mhill_tononi_neuron:
         gamma_p_GB real = 450
         theta_d_GB nmol*us/(dm**3) = 0.006 nmol*us/(dm**3)
         theta_p_GB nmol*us/(dm**3) = 0.001 nmol*us/(dm**3) 
-        rho0_GB real = 0 
+        rho0_GB real = 0
+        
         
         # Constant external input current
         I_e pA = 0 pA
@@ -173,7 +184,11 @@ neuron mhill_tononi_neuron:
         inline normalisation_factor_AMPA real = 1 / ( exp( -t_peak_AMPA / AMPA_Tau_1 ) - exp( -t_peak_AMPA / AMPA_Tau_2 ) )
         #inline AMPAInitialValue real = AMPA_g_peak * normalisation_factor_AMPA * exact_integration_adjustment_AMPA
         inline AMPAInitialValue real = normalisation_factor_AMPA * exact_integration_adjustment_AMPA
-       
+        
+        #  g_AMPA reference value for depressed and potentiated state
+        inline G_AMPA_depr nS = AMPA_g_peak
+        inline G_AMPA_pot nS = G_AMPA_pot_factor * AMPA_g_peak
+            
         # NMDA initialization
         inline exact_integration_adjustment_NMDA real = ( ( 1 / NMDA_Tau_2 ) - ( 1 / NMDA_Tau_1 ) ) * ms
         inline t_peak_NMDA ms = ( NMDA_Tau_2 * NMDA_Tau_1 ) * ln( NMDA_Tau_2 / NMDA_Tau_1 ) / ( NMDA_Tau_2 - NMDA_Tau_1 )
