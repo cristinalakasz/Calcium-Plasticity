@@ -22,11 +22,11 @@ neuron mhill_tononi_neuron:
         
         # Plasticity State Variables
         Ca_star_GB nmol*us/(dm**3) = 0 nmol*us/(dm**3)  # Effective Calcium integration
-        rho_GB real = rho0_GB # Synaptic efficacy tracker
         Ca_i nmol/(dm**3) = min_Ca_CR   # Intracellular Calcium
+        recordable rho_GB real = rho0_GB # Synaptic efficacy tracker
         
         # AMPAR Post-synaptic plasticity
-        g_AMPA_hat nS = AMPA_g_peak  # G^(0)_AMPAR
+        g_AMPA_hat nS = AMPA_g_peak  # initialization of g_AMPA_hat 
 
 
     equations:
@@ -67,7 +67,7 @@ neuron mhill_tononi_neuron:
         # Potassium repolarizing current
         recordable inline I_spike mV = (g_spike) ? -( V_m - E_K ) / Tau_spike * ms : 0 mV
 
-        Theta' = -( Theta - Theta_eq ) / Tau_theta      #---Dynamic AP Threshold
+        Theta' = -( Theta - Theta_eq ) / Tau_theta      # Dynamic AP Threshold
         
 
         # Membrane potential dynamics
@@ -100,8 +100,8 @@ neuron mhill_tononi_neuron:
         rho_GB' = ( - rho_GB*(1 - rho_GB)*(rho_star_GB - rho_GB) + pot_GB*gamma_p_GB*(1 - rho_GB) - dep_GB*gamma_d_GB*rho_GB ) / ((10**3)*tau_ind_GB)
         
         #plasticity on g_AMPA
-        inline g_AMPA_target nS = g_AMPA_depr + rho_GB * ( g_AMPA_pot - g_AMPA_depr )
-        g_AMPA_hat' = ( g_AMPA_target - g_AMPA_hat ) / ( (10**3) * tau_change_GB )
+        inline g_AMPA_target nS = g_AMPA_depr + rho_GB * (g_AMPA_pot - g_AMPA_depr)
+        g_AMPA_hat' = (g_AMPA_target - g_AMPA_hat) / ((10**3) * tau_change_GB)
 
 
     parameters:
@@ -114,9 +114,9 @@ neuron mhill_tononi_neuron:
         E_K mV = -90.0 mV
         g_NaL nS =  0.2 nS
         g_KL nS = 1.0 nS                # 1.0 - 1.85
-        Tau_m ms = 16.0 ms              # membrane time constant applying to all currents but repolarizing K-current (see [1, p 1677]) 16ms
+        Tau_m ms = 16.0 ms              # membrane time constant applying to all currents but repolarizing K_current (see [1, p 1677]) 16ms
         Theta_eq mV = -40.0 mV          # equilibrium value
-        Tau_spike ms = 1.75 ms          # membrane time constant applying to repolarizing K-current 1.75
+        Tau_spike ms = 1.75 ms          # membrane time constant applying to repolarizing K_current 1.75
         t_ref ms = 20 ms
         Tau_theta ms = 30.0 ms  # time constant
         tau_syn_exc ms = 0.2 ms         # Synaptic time constant of excitatory synapse
@@ -126,9 +126,10 @@ neuron mhill_tononi_neuron:
         AMPA_E_rev mV = 0.0 mV          # reversal potential
         AMPA_Tau_1 ms = 0.5 ms          # rise time 0.5
         AMPA_Tau_2 ms = 2.4 ms          # decay time, Tau_1 < Tau_2 2.4
-        # LTP/LTD AMPA parameters (Chindemi et al. 2022)
+        
+        # LTP/LTD AMPA parameters
         tau_change_GB s = 100 s
-        g_AMPA_pot_factor real = 2.0     # G^p/G^d ~ 2 
+        g_AMPA_pot_factor real = 2.0     # g_hat_p/g_hat_d = 2 
         
 
         # NMDA parameters
@@ -140,7 +141,7 @@ neuron mhill_tononi_neuron:
         NMDA_Sact mV = 2.5 mV           # scale of inactivation
         
         # VDCC parameters 
-        volume_CR um**3 = 0.087 um**3            # From spine data by Ruth Benavides-Piccione (unpublished)
+        volume_CR um**3 = 0.087 um**3            # From spine data by Ruth Benavides_Piccione (unpublished)
         VDCC_g_bar nS/(um**2) = 0.0744 nS/(um**2)  # Density spines: 20 um-2 (Sabatini 2000), unitary conductance VGCC 3.72 pS (Bartol 2015)
         vhm_VDCC mV = -5.9 mV                # v 1/2 for act, Magee and Johnston 1995 (corrected for m*m)
         km_VDCC mV = 9.5 mV                  # act slope, Magee and Johnston 1995 (corrected for m*m)
@@ -185,7 +186,7 @@ neuron mhill_tononi_neuron:
         #inline AMPAInitialValue real = AMPA_g_peak * normalisation_factor_AMPA * exact_integration_adjustment_AMPA
         inline AMPAInitialValue real = normalisation_factor_AMPA * exact_integration_adjustment_AMPA
         
-        #  g_AMPA reference value for depressed and potentiated state
+        # g_AMPA reference value for depressed and potentiated state
         inline g_AMPA_depr nS = g_AMPA_depr_fun()
         inline g_AMPA_pot  nS = g_AMPA_pot_fun()
             
@@ -205,7 +206,6 @@ neuron mhill_tononi_neuron:
 
     output:
         spike
-        rho_out = rho_GB
         # vesc = U*N
 
 
@@ -233,7 +233,7 @@ neuron mhill_tononi_neuron:
        
        
     function g_AMPA_depr_fun() nS:
-        if rho0_GB < 0.5:  #depressed state
+        if rho0_GB < 0.5: #depressed state
             # g_d = g0
             return AMPA_g_peak
         else:
@@ -242,16 +242,9 @@ neuron mhill_tononi_neuron:
 
 
     function g_AMPA_pot_fun() nS:
-        if rho0_GB < 0.5:  #potentiated state
+        if rho0_GB < 0.5: #potentiated state
             # g_p = pot_factor * g0
             return g_AMPA_pot_factor * AMPA_g_peak
         else:
             # g_p = g0
             return AMPA_g_peak
-
-
-
-
-
-
-
