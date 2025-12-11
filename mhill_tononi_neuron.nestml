@@ -21,7 +21,7 @@ neuron mhill_tononi_neuron:
         g_NMDA$ real = NMDAInitialValue
         
         # Plasticity State Variables
-        Ca_star_GB nmol*us/(dm**3) = 0 nmol*us/(dm**3)  # Effective Calcium integration
+        Ca_star_GB nmol*ms/(dm**3) = 0 nmol*ms/(dm**3)  # Effective Calcium integration
         Ca_i nmol/(dm**3) = min_Ca_CR   # Intracellular Calcium
         recordable rho_GB real = rho0_GB # Synaptic efficacy tracker
         
@@ -163,8 +163,8 @@ neuron mhill_tononi_neuron:
         tau_Ca_star_GB ms = 200 ms
         gamma_d_GB real = 100
         gamma_p_GB real = 450
-        theta_d_GB nmol*us/(dm**3) = 0.006 nmol*us/(dm**3)
-        theta_p_GB nmol*us/(dm**3) = 0.001 nmol*us/(dm**3) 
+        theta_d_GB nmol*ms/(dm**3) = 0.006 nmol*ms/(dm**3)
+        theta_p_GB nmol*ms/(dm**3) = 0.001 nmol*ms/(dm**3) 
         rho0_GB real = 0
         
         
@@ -206,7 +206,6 @@ neuron mhill_tononi_neuron:
 
     output:
         spike
-        # vesc = U*N
 
 
     update:
@@ -248,3 +247,4 @@ neuron mhill_tononi_neuron:
         else:
             # g_p = g0
             return AMPA_g_peak
+
