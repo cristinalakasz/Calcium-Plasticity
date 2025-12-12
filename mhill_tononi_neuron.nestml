@@ -27,6 +27,10 @@ neuron mhill_tononi_neuron:
         
         # AMPAR Post-synaptic plasticity
         g_AMPA_hat nS = AMPA_g_peak  # initialization of g_AMPA_hat 
+        
+        #USE
+        Use real = Use_0
+        
 
 
     equations:
@@ -102,6 +106,10 @@ neuron mhill_tononi_neuron:
         #plasticity on g_AMPA
         inline g_AMPA_target nS = g_AMPA_depr + rho_GB * (g_AMPA_pot - g_AMPA_depr)
         g_AMPA_hat' = (g_AMPA_target - g_AMPA_hat) / ((10**3) * tau_change_GB)
+        
+        #USE
+        inline Use_target real = Use_depr + rho_GB * (Use_pot - Use_depr)
+        Use' = (Use_target - Use) / ((10**3) * tau_change_GB)
 
 
     parameters:
@@ -173,6 +181,11 @@ neuron mhill_tononi_neuron:
         
         #pi
         p real = 3.141592653589793
+        
+        #USE
+        Use_0 real = 0.5
+        v real = 0.2
+        
 
 
     internals:
@@ -195,6 +208,10 @@ neuron mhill_tononi_neuron:
         inline t_peak_NMDA ms = ( NMDA_Tau_2 * NMDA_Tau_1 ) * ln( NMDA_Tau_2 / NMDA_Tau_1 ) / ( NMDA_Tau_2 - NMDA_Tau_1 )
         inline normalisation_factor_NMDA real = 1 / ( exp( -t_peak_NMDA / NMDA_Tau_1 ) - exp( -t_peak_NMDA / NMDA_Tau_2 ) )
         inline NMDAInitialValue real = NMDA_g_peak * normalisation_factor_NMDA * exact_integration_adjustment_NMDA
+        
+        #Use
+        inline Use_depr real = Use_depr_fun()
+        inline Use_pot  real = Use_pot_fun()
         
 
     input:
@@ -248,3 +265,20 @@ neuron mhill_tononi_neuron:
             # g_p = g0
             return AMPA_g_peak
 
+
+    function Use_depr_fun() real:
+        if rho0_GB < 0.5: #depressed state
+            # Use_d = Use_0
+            return Use_0
+        else:
+            # Use_d = Use_0**(1/v)
+            return Use_0**(1/v)
+
+
+    function Use_pot_fun() real:
+        if rho0_GB < 0.5: #potentiated state
+            # Use_p = Use_0**v
+            return Use_0**v
+        else:
+            # Use_p = Use_0
+            return Use_0

@@ -37,8 +37,8 @@ synapse stdp:
     state:
         w real = 1.    @nest::weight   # Synaptic weight
         x real = 1  # fraction of possible realisable vescicles
-        Use real = Use_0
-        u real = Use
+        
+        u real = 0.5
         u_tsyn real = u
         
         last_pre_spike ms = 0 ms
@@ -48,37 +48,25 @@ synapse stdp:
         test real = 0
 
     parameters:
-        d ms = 1 ms  @nest::delay   # Synaptic transmission delay
+        d ms = 1 ms  @nest::delay   # Synaptic transmission dselay
         Wmax real = 100.
         Wmin real = 0.
-        vesc real = 1.
-        rho0_GB real = 0 #da sistemare le funzioni fuori dal Python (setStatus)
-        Use_0 real = 0.5
         
         tau_rec ms = 800 ms
         tau_fac ms = 10 ms
-        tau_change ms = 100000 ms
         N_sites real = 5
-        v real = 0.2
-        tau_change_GB s = 100 s
-
+        
         
 
     equations:
-        inline Use_target real = Use_depr + rho_in * (Use_pot - Use_depr)
-        Use' = (Use_target - Use) / ((10**3) * tau_change_GB)
+        
         x' = (1-x) / tau_rec
         
-        
-    
-    internals:
-        inline Use_depr real = Use_depr_fun()
-        inline Use_pot  real = Use_pot_fun()
 
     input:
         pre_spikes <- spike
         post_spikes <- spike
-        rho_in real <- continuous
+        Use_in real <- continuous
 
     output:
         spike
@@ -95,7 +83,7 @@ synapse stdp:
             delta = 0 ms
                 
         #U
-        u = u_tsyn * exp(-(delta)/tau_fac) + Use * (1-u_tsyn*exp(-(delta)/tau_fac))
+        u = u_tsyn * exp(-(delta)/tau_fac) + Use_in * (1-u_tsyn*exp(-(delta)/tau_fac))
         
         #Deterministic number of released vescicles (for future implementation in modifying the g of the neuron)
         N_rel = N_sites * x * u
@@ -111,20 +99,5 @@ synapse stdp:
         
         
         
-    function Use_depr_fun() real:
-        if rho0_GB < 0.5: #depressed state
-            # Use_d = Use_0
-            return Use_0
-        else:
-            # Use_d = Use_0**(1/v)
-            return Use_0**(1/v)
 
-
-    function Use_pot_fun() real:
-        if rho0_GB < 0.5: #potentiated state
-            # Use_p = Use_0**v
-            return Use_0**v
-        else:
-            # Use_p = Use_0
-            return Use_0
 
