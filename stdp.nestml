@@ -85,13 +85,20 @@ synapse stdp:
         #U
         u = u_tsyn * exp(-(delta)/tau_fac) + Use_in * (1-u_tsyn*exp(-(delta)/tau_fac))
         
-        #Deterministic number of released vescicles (for future implementation in modifying the g of the neuron)
-        N_rel = N_sites * x * u
+        # release fraction for THIS spike (pre-depletion)
+        inline rel real = u * x
         
-        #Update w
-        w = w*x*u
-        # deliver spike to postsynaptic partner
-        deliver_spike(w, d)
+        #Deterministic number of released vescicles (for future implementation in modifying the g of the neuron)
+        N_rel = N_sites * rel
+        
+        # weight delivered for THIS spike
+        inline w_eff real = w * rel
+        deliver_spike(w_eff, d)
+        
+        # depletion: consume resources
+        x = x - rel          
+        if x < 0.0:
+            x = 0.0
         
         #Updates
         last_pre_spike = t
@@ -99,5 +106,11 @@ synapse stdp:
         
         
         
+        
+
+
+
+
+
 
 

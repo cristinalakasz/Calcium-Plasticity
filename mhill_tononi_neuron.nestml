@@ -17,8 +17,8 @@ neuron mhill_tononi_neuron:
         # Synaptic conductances
         g_AMPA real = 0
         g_NMDA real = 0
-        g_AMPA$ real = AMPAInitialValue
-        g_NMDA$ real = NMDAInitialValue
+        g_AMPA$ real = 0
+        g_NMDA$ real = 0
         
         # Plasticity State Variables
         Ca_star_GB nmol*ms/(dm**3) = 0 nmol*ms/(dm**3)  # Effective Calcium integration
@@ -282,3 +282,4 @@ neuron mhill_tononi_neuron:
         else:
             # Use_p = Use_0
             return Use_0
+
