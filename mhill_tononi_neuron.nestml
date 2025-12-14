@@ -17,8 +17,8 @@ neuron mhill_tononi_neuron:
         # Synaptic conductances
         g_AMPA real = 0
         g_NMDA real = 0
-        g_AMPA$ real = 0
-        g_NMDA$ real = 0
+        g_AMPA$ real = AMPAInitialValue
+        g_NMDA$ real = NMDAInitialValue
         
         # Plasticity State Variables
         Ca_star_GB nmol*ms/(dm**3) = 0 nmol*ms/(dm**3)  # Effective Calcium integration
@@ -42,8 +42,8 @@ neuron mhill_tononi_neuron:
         inline I_syn_exc pA = convolve(g_exc, I_EXC) * nS * ( V_m - E_Na )
 
         # AMPA and NMDA currents possibile inserire influenza del numero di vescicole rilasciate (N_rel)
-        inline I_syn_ampa pA = g_AMPA_hat * convolve(g_AMPA, AMPA) * ( V_m - AMPA_E_rev ) 
-        recordable inline I_syn_nmda pA = convolve(g_NMDA, NMDA) * nS * ( V_m - Eca_syn_nmda ) / ( 1 + exp( ( NMDA_Vact - V_m ) / NMDA_Sact ) )  
+        recordable inline I_syn_ampa pA = g_AMPA_hat * convolve(g_AMPA, AMPA) * ( V_m - AMPA_E_rev ) 
+        recordable inline I_syn_nmda pA = convolve(g_NMDA, NMDA) * nS * ( V_m - NMDA_E_rev ) / ( 1 + exp( ( NMDA_Vact - V_m ) / NMDA_Sact ) )  
         
         
         # VDCC currents
@@ -58,7 +58,7 @@ neuron mhill_tononi_neuron:
         
         inline g_VDCC nS = (10**(-3)) * VDCC_g_peak * m_VDCC * m_VDCC * h_VDCC
         
-        inline I_syn_VDCC pA = g_VDCC*(V_m-Eca_syn_VDCC)
+        recordable inline I_syn_VDCC pA = g_VDCC*(V_m-Eca_syn_VDCC)
         
         # Total current
         inline I_syn pA = I_syn_ampa + I_syn_nmda + I_syn_VDCC 
@@ -171,9 +171,9 @@ neuron mhill_tononi_neuron:
         tau_Ca_star_GB ms = 200 ms
         gamma_d_GB real = 100
         gamma_p_GB real = 450
-        theta_d_GB nmol*ms/(dm**3) = 0.006 nmol*ms/(dm**3)
-        theta_p_GB nmol*ms/(dm**3) = 0.001 nmol*ms/(dm**3) 
-        rho0_GB real = 0
+        theta_d_GB nmol*ms/(dm**3) = 1.15 nmol*ms/(dm**3)
+        theta_p_GB nmol*ms/(dm**3) = 2.00 nmol*ms/(dm**3) 
+        rho0_GB real = 1
         
         
         # Constant external input current
@@ -282,4 +282,5 @@ neuron mhill_tononi_neuron:
         else:
             # Use_p = Use_0
             return Use_0
+
 
