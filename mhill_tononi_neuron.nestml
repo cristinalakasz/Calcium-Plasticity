@@ -1,16 +1,23 @@
 
-neuron mhill_tononi_neuron: 
+neuron mhill_tononi_neuron:
+
+    ########################
+    # STATE VARIABLES
+    ########################
     state:
-        r integer = 0           # Counts number of tick during the refractory period
-        g_spike boolean = false 
-        loga real = 10.26
-        cstel real = 0
-        AMPA_g_peak nS = 0.8 nS
+        # Refractory / spike bookkeeping
+        r integer = 0                     # Remaining refractory ticks (counts down to 0)
+        g_spike boolean = false           # True only in the time-step where an AP is emitted
+
+        # (Currently unused legacy/debug state)
         g_bool boolean = false
-        V_m mV = ( g_NaL * E_Na + g_KL * E_K ) / ( g_NaL + g_KL )   # Baseline value for Vm  
-        Theta mV = Theta_eq 
+        loga real = 10.26
         
-        # inizializzo m e h a riposo quindi con V_m = V_rest e m(t=0)= minf(V_rest) e h(t=0)= hinf(V_rest)
+        # Baseline membrane state
+        V_m mV = ( g_NaL * E_Na + g_KL * E_K ) / ( g_NaL + g_KL )   # Leak-only equilibrium Vm
+        Theta mV = Theta_eq                                          # Dynamic spike threshold
+
+        # VDCC gating variables (initialized at rest from steady-states)
         m_VDCC real = 1 / (1 + exp((vhm_VDCC - V_m) / km_VDCC))
         h_VDCC real = 1 / (1 + exp((vhh_VDCC - V_m) / kh_VDCC))
         
@@ -20,176 +27,198 @@ neuron mhill_tononi_neuron:
         g_AMPA$ real = AMPAInitialValue
         g_NMDA$ real = NMDAInitialValue
         
-        # Plasticity State Variables
-        Ca_star_GB nmol*ms/(dm**3) = 0 nmol*ms/(dm**3)  # Effective Calcium integration
-        Ca_i nmol/(dm**3) = min_Ca_CR   # Intracellular Calcium
-        recordable rho_GB real = rho0_GB # Synaptic efficacy tracker
+        # Long-term plasticity state (Graupner & Brunel-style efficacy driven by integrated Ca)
+        Ca_i nmol/(dm**3) = min_Ca_CR                    # Spine free Ca2+ concentration
+        Ca_star_GB nmol*ms/(dm**3) = 0 nmol*ms/(dm**3)   # Leaky Ca integrator (c* in the paper)
+        recordable rho_GB real = rho0_GB                 # Synaptic efficacy rho (bistable dynamics)
         
-        # AMPAR Post-synaptic plasticity
-        g_AMPA_hat nS = AMPA_g_peak  # initialization of g_AMPA_hat 
-        
-        #USE
-        Use real = Use_0
-        
+        # Expression variables
+        AMPA_g_peak nS = 0.8 nS
+        g_AMPA_hat nS = AMPA_g_peak                      # Plastic AMPAR peak conductance (G^AMPAR)
+        Use real = Use_0                                 # Plastic release probability set-point (USE)
 
 
+    ########################
+    # EQUATIONS
+    ########################
     equations:
+
         #############
-        # V_m
+        # Synaptic currents
         #############
         
-        # Artifical excitation
+        # Artificial external excitation current (event-driven kernel)
+        # NOTE: uses E_Na as reversal; if you intended a generic excitatory reversal, use E_exc instead.
         inline I_syn_exc pA = convolve(g_exc, I_EXC) * nS * ( V_m - E_Na )
+        
+        # AMPAR current: peak conductance is plastic (g_AMPA_hat), kernel gives the time-course
+        recordable inline I_syn_ampa pA = g_AMPA_hat * convolve(g_AMPA, AMPA) * ( V_m - AMPA_E_rev )
 
-        # AMPA and NMDA currents possibile inserire influenza del numero di vescicole rilasciate (N_rel)
-        recordable inline I_syn_ampa pA = g_AMPA_hat * convolve(g_AMPA, AMPA) * ( V_m - AMPA_E_rev ) 
+        # NMDAR current: kernel + voltage dependence (Mg block approximated by a sigmoid term)
         recordable inline I_syn_nmda pA = convolve(g_NMDA, NMDA) * nS * ( V_m - NMDA_E_rev ) / ( 1 + exp( ( NMDA_Vact - V_m ) / NMDA_Sact ) )  
         
         
-        # VDCC currents
-        # VDCC (R_type), assuming sphere for spine head
-        inline VDCC_g_peak nS = VDCC_g_bar * 4*(um**2)*p*(3*(1/(um**3))/4*volume_CR*1/p)**(2/3)
-        
+        #############
+        # VDCC (R-type) current
+        #############
+
+        # Peak VDCC conductance derived from spine area assuming spherical spine head
+        # Here volume_CR is treated as a fixed representative spine volume
+        inline VDCC_g_peak nS = VDCC_g_bar * 4*(um**2)*p * (3*(1/(um**3))/4*volume_CR*1/p)**(2/3)
+
         inline minf_VDCC real = 1 / (1 + exp((vhm_VDCC - V_m) / km_VDCC))
         inline hinf_VDCC real = 1 / (1 + exp((vhh_VDCC - V_m) / kh_VDCC))
-        
-        m_VDCC' = (minf_VDCC-m_VDCC)/mtau_VDCC
-        h_VDCC' = (hinf_VDCC-h_VDCC)/htau_VDCC
-        
-        inline g_VDCC nS = (10**(-3)) * VDCC_g_peak * m_VDCC * m_VDCC * h_VDCC
-        
-        recordable inline I_syn_VDCC pA = g_VDCC*(V_m-Eca_syn_VDCC)
-        
-        # Total current
-        inline I_syn pA = I_syn_ampa + I_syn_nmda + I_syn_VDCC 
 
-        # Sodium and potassium currents
-        inline I_Na pA = g_NaL * ( V_m - E_Na )
-        inline I_K pA = g_KL * ( V_m - E_K )
-         
+        m_VDCC' = (minf_VDCC - m_VDCC) / mtau_VDCC
+        h_VDCC' = (hinf_VDCC - h_VDCC) / htau_VDCC
+
+        inline g_VDCC nS = (10**(-3)) * VDCC_g_peak * m_VDCC * m_VDCC * h_VDCC
+        recordable inline I_syn_VDCC pA = g_VDCC * (V_m - Eca_syn_VDCC)
         
+ 
+        # Total synaptic current used in Vm equation
+        inline I_syn pA = I_syn_ampa + I_syn_nmda + I_syn_VDCC
+
+
+        #############
+        # Intrinsic (leak) currents
+        #############
+        inline I_Na pA = g_NaL * ( V_m - E_Na )
+        inline I_K  pA = g_KL  * ( V_m - E_K )
+         
         # Potassium repolarizing current
         recordable inline I_spike mV = (g_spike) ? -( V_m - E_K ) / Tau_spike * ms : 0 mV
 
-        Theta' = -( Theta - Theta_eq ) / Tau_theta      # Dynamic AP Threshold
+        # Threshold relaxation (dynamic AP threshold)
+        Theta' = -( Theta - Theta_eq ) / Tau_theta
         
 
         # Membrane potential dynamics
-        V_m'  = ( ( - I_Na - I_K - I_syn - I_syn_exc + I_stim ) / Tau_m + I_spike * pA/(ms * mV) ) * s/nF  #I_KNa I_NaP
+        V_m'  = ( ( - I_Na - I_K - I_syn - I_syn_exc + I_stim ) / Tau_m + I_spike * pA/(ms * mV) ) * s/nF 
         
         
         #############
-        # Synapses
+        # Synaptic conductance kernels
         #############
-        kernel g_AMPA' = g_AMPA$ - g_AMPA  / AMPA_Tau_2,
+        kernel g_AMPA'  = g_AMPA$ - g_AMPA  / AMPA_Tau_2,
                g_AMPA$' = -g_AMPA$ / AMPA_Tau_1
 
-        kernel g_NMDA' = g_NMDA$ - g_NMDA / NMDA_Tau_2,
+        kernel g_NMDA'  = g_NMDA$ - g_NMDA / NMDA_Tau_2,
                g_NMDA$' = -g_NMDA$ / NMDA_Tau_1
-               
+
         kernel g_exc = (e/tau_syn_exc) * t * exp(-t/tau_syn_exc)
                
 
-        # Postsynaptic Ca dynamics
-        Ca_i' = - (I_syn_nmda + I_syn_VDCC)*gamma_Ca_CR/(volume_CR*2*FARADAY) - (Ca_i - min_Ca_CR)/tau_Ca_CR
+        #############
+        # Calcium dynamics (spine) + long-term plasticity
+        #############
+
+        # Free calcium concentration (point-current approximation).
+        # Paper formulation uses Ca influx from the *calcium component* of NMDAR current plus VDCC current.
+        # Here we are using I_syn_nmda directly (which is not the same quantity).
+        Ca_i' = - (I_syn_nmda + I_syn_VDCC) * gamma_Ca_CR / (volume_CR * 2 * FARADAY) - (Ca_i - min_Ca_CR) / tau_Ca_CR
         
-        # Long_term synaptic plasticity
-        Ca_star_GB' = -(Ca_star_GB/tau_Ca_star_GB) + (Ca_i - min_Ca_CR)
+        # Leaky calcium integrator c* (drives plasticity thresholds)
+        Ca_star_GB' = -(Ca_star_GB / tau_Ca_star_GB) + (Ca_i - min_Ca_CR)
         
-        # LOGIC FROM NEURON WATCHERS
-        # If Ca_star is above theta, the variable is 1.0, else 0.0.
+        # Heaviside thresholding of c* into depression / potentiation "gates"
         inline dep_GB real = Hfun(Ca_star_GB, theta_d_GB)
         inline pot_GB real = Hfun(Ca_star_GB, theta_p_GB)
         
-        rho_GB' = ( - rho_GB*(1 - rho_GB)*(rho_star_GB - rho_GB) + pot_GB*gamma_p_GB*(1 - rho_GB) - dep_GB*gamma_d_GB*rho_GB ) / ((10**3)*tau_ind_GB)
-        
-        #plasticity on g_AMPA
+        # Synaptic efficacy rho (bistable dynamics with LTP/LTD rates)
+        rho_GB' = ( -rho_GB*(1 - rho_GB)*(rho_star_GB - rho_GB) + pot_GB*gamma_p_GB*(1 - rho_GB) - dep_GB*gamma_d_GB*rho_GB ) / ((10**3) * tau_ind_GB)
+         
+        # Slow expression of plasticity: rho into AMPAR conductance target
         inline g_AMPA_target nS = g_AMPA_depr + rho_GB * (g_AMPA_pot - g_AMPA_depr)
         g_AMPA_hat' = (g_AMPA_target - g_AMPA_hat) / ((10**3) * tau_change_GB)
-        
-        #USE
+
+        # Slow expression of plasticity: rho into USE target
         inline Use_target real = Use_depr + rho_GB * (Use_pot - Use_depr)
         Use' = (Use_target - Use) / ((10**3) * tau_change_GB)
-
-
+        
+        
+    ########################
+    # PARAMETERS
+    ########################
     parameters:
-        # Neuron parameters 
-        Eca_syn_nmda mV = 40 mV
-        Eca_syn_VDCC mV = 120 mV
-        E_exc mV = 0 mV                 # Excitatory reversal potential
-        E_Rest mV = -65 mV
-        E_Na mV = 30.0 mV #30
-        E_K mV = -90.0 mV
-        g_NaL nS =  0.2 nS
-        g_KL nS = 1.0 nS                # 1.0 - 1.85
-        Tau_m ms = 16.0 ms              # membrane time constant applying to all currents but repolarizing K_current (see [1, p 1677]) 16ms
-        Theta_eq mV = -40.0 mV          # equilibrium value
-        Tau_spike ms = 1.75 ms          # membrane time constant applying to repolarizing K_current 1.75
+        # Reversal potentials / passive conductances
+        E_Na mV = 30.0 mV
+        E_K  mV = -90.0 mV
+        E_Rest mV = -65 mV                  # (Unused)
+        E_exc  mV = 0 mV                    # Excitatory reversal potential (Unused)
+        
+        g_NaL nS = 0.2 nS
+        g_KL  nS = 1.0 nS                   # 1.0 - 1.85
+
+        # Membrane / spike mechanism
+        Tau_m ms = 16.0 ms                  # membrane time constant applying to all currents but repolarizing K_current
+        Theta_eq mV = -40.0 mV              # equilibrium value
+        Tau_theta ms = 30.0 ms              # time constant
+        Tau_spike ms = 1.75 ms              # membrane time constant applying to repolarizing K_current
         t_ref ms = 20 ms
-        Tau_theta ms = 30.0 ms  # time constant
-        tau_syn_exc ms = 0.2 ms         # Synaptic time constant of excitatory synapse
-        tau_ch ms = 8000 ms
+        
+        # External excitation kernel        # Synaptic time constant of excitatory synapse
+        tau_syn_exc ms = 0.2 ms
+        tau_ch ms = 8000 ms                 # (Unused)
 
-        # AMPA parameters
+        # AMPAR
         AMPA_E_rev mV = 0.0 mV          # reversal potential
-        AMPA_Tau_1 ms = 0.5 ms          # rise time 0.5
-        AMPA_Tau_2 ms = 2.4 ms          # decay time, Tau_1 < Tau_2 2.4
+        AMPA_Tau_1 ms = 0.5 ms          # rise time
+        AMPA_Tau_2 ms = 2.4 ms          # decay time, Tau_1 < Tau_2 
         
-        # LTP/LTD AMPA parameters
-        tau_change_GB s = 100 s
-        g_AMPA_pot_factor real = 2.0     # g_hat_p/g_hat_d = 2 
-        
-
-        # NMDA parameters
+        # NMDAR
         NMDA_g_peak nS = 0.075 nS       # peak conductance
-        NMDA_Tau_1 ms = 4.0 ms          # rise time 4
-        NMDA_Tau_2 ms = 40.0 ms         # decay time, Tau_1 < Tau_2 40
+        NMDA_Tau_1 ms = 4.0 ms          # rise time 
+        NMDA_Tau_2 ms = 40.0 ms         # decay time, Tau_1 < Tau_2
         NMDA_E_rev mV = 0.0 mV          # reversal potential
         NMDA_Vact mV = -58.0 mV         # inactive for V << Vact, inflection of sigmoid
         NMDA_Sact mV = 2.5 mV           # scale of inactivation
         
-        # VDCC parameters 
-        volume_CR um**3 = 0.087 um**3            # From spine data by Ruth Benavides_Piccione (unpublished)
-        VDCC_g_bar nS/(um**2) = 0.0744 nS/(um**2)  # Density spines: 20 um-2 (Sabatini 2000), unitary conductance VGCC 3.72 pS (Bartol 2015)
-        vhm_VDCC mV = -5.9 mV                # v 1/2 for act, Magee and Johnston 1995 (corrected for m*m)
-        km_VDCC mV = 9.5 mV                  # act slope, Magee and Johnston 1995 (corrected for m*m)
-        vhh_VDCC mV = -39 mV                 # v 1/2 for inact, Magee and Johnston 1995
-        kh_VDCC mV = -9.2 mV                 # inact, Magee and Johnston 1995
-        mtau_VDCC ms = 1 ms                  # max time constant (guess)
-        htau_VDCC ms = 27 ms                 # max time constant 100*0.27
+        # VDCC / spine geometry
+        Eca_syn_VDCC mV = 120 mV
+        Eca_syn_nmda mV = 40 mV             # (Unused) for the implementation of the proper Ca component of I_syn_nmda
+        volume_CR um**3 = 0.087 um**3
+        VDCC_g_bar nS/(um**2) = 0.0744 nS/(um**2)  # Density spines
+
+        vhm_VDCC mV = -5.9 mV
+        km_VDCC  mV = 9.5 mV
+        vhh_VDCC mV = -39 mV
+        kh_VDCC  mV = -9.2 mV
+        mtau_VDCC ms = 1 ms
+        htau_VDCC ms = 27 ms
         
-        # Postsynaptic Ca2+ dynamics
-        gamma_Ca_CR real = 0.04      # Percent of free calcium (not buffered), Sabatini et al 2002: kappa_e = 24+-11 (also 14 (2-31) or 22 (18-33))
-        tau_Ca_CR ms = 12 ms         # Rate of removal of calcium, Sabatini et al 2002: 14ms (12-20ms)
-        min_Ca_CR nmol/(dm**3) = 70 nmol/(dm**3)      # Sabatini et al 2002: 70+-29 nM, per AP: 1.1 (0.6-8.2) uM = 1100 e-6 mM = 1100 nM
+        # Ca dynamics
+        gamma_Ca_CR real = 0.04      # Percent of free calcium
+        tau_Ca_CR ms = 12 ms         # Rate of removal of calcium
+        min_Ca_CR nmol/(dm**3) = 70 nmol/(dm**3)
         FARADAY C/mol = 96.4853321 C/mol
         
-        # Long-term synaptic plasticity
+        # Long-term plasticity
         rho_star_GB real = 0.5
         tau_ind_GB s = 70 s
-        tau_exp_GB s = 100 s
         tau_Ca_star_GB ms = 200 ms
         gamma_d_GB real = 100
         gamma_p_GB real = 450
         theta_d_GB nmol*ms/(dm**3) = 1.15 nmol*ms/(dm**3)
-        theta_p_GB nmol*ms/(dm**3) = 2.00 nmol*ms/(dm**3) 
-        rho0_GB real = 1
+        theta_p_GB nmol*ms/(dm**3) = 2.00 nmol*ms/(dm**3)
+        rho0_GB real = 0.5
         
+        # Plasticity expression time course
+        tau_change_GB s = 100 s
+        g_AMPA_pot_factor real = 2.0     # g_hat_p/g_hat_d = 2
         
-        # Constant external input current
-        I_e pA = 0 pA
-        
-        #pi
+        # Math constant (pi)
         p real = 3.141592653589793
-        
-        #USE
+
+        # USE mapping (presynaptic expression)
         Use_0 real = 0.5
         v real = 0.2
         
-
-
+        
+    ########################
+    # INTERNALS
+    ########################
     internals:
-       # Inline calculations for each synapse
         RefractoryCounts integer = steps(t_ref) # refractory time in steps 
         
         # AMPA initialization
@@ -199,7 +228,7 @@ neuron mhill_tononi_neuron:
         #inline AMPAInitialValue real = AMPA_g_peak * normalisation_factor_AMPA * exact_integration_adjustment_AMPA
         inline AMPAInitialValue real = normalisation_factor_AMPA * exact_integration_adjustment_AMPA
         
-        # g_AMPA reference value for depressed and potentiated state
+        # Depressed / potentiated AMPAR peak conductances
         inline g_AMPA_depr nS = g_AMPA_depr_fun()
         inline g_AMPA_pot  nS = g_AMPA_pot_fun()
             
@@ -209,78 +238,83 @@ neuron mhill_tononi_neuron:
         inline normalisation_factor_NMDA real = 1 / ( exp( -t_peak_NMDA / NMDA_Tau_1 ) - exp( -t_peak_NMDA / NMDA_Tau_2 ) )
         inline NMDAInitialValue real = NMDA_g_peak * normalisation_factor_NMDA * exact_integration_adjustment_NMDA
         
-        #Use
+        # Depressed / potentiated USE targets
         inline Use_depr real = Use_depr_fun()
         inline Use_pot  real = Use_pot_fun()
         
-
+    ########################
+    # I/O
+    ########################
     input:
         AMPA <- spike
         NMDA <- spike
         I_EXC <- spike
         I_stim pA <- continuous
 
-
     output:
         spike
-
-
+        
+    ########################
+    # UPDATE
+    ########################
     update:
-       integrate_odes()
-       if r > 0:
-           r =  r - 1
-       else: 
-           g_spike = false
-            
-           if V_m > Theta:
-               Theta = E_Na + 20 * mV
-               V_m = E_Na 
-               r = RefractoryCounts
-               g_spike = true
-               emit_spike()
-               print("here") 
+        integrate_odes()
+        
+        # Refractory counter update
+        if r > 0:
+            r = r - 1
+        else:
+            g_spike = false
 
+            # Spike emission condition
+            if V_m > Theta:
+                Theta = E_Na + 20 * mV      # Hard reset of threshold after spike
+                V_m = E_Na                  # Hard reset of Vm to spike peak
+                r = RefractoryCounts
+                g_spike = true
+                emit_spike()
+                # print("here")             # Debug
+ 
 
+    ########################
+    # FUNCTIONS
+    ########################
     function Hfun(cStel real, th real) real:
         if cStel > th:
             return 1.0
         else:
             return 0.0
-       
-       
+    
+    
     function g_AMPA_depr_fun() nS:
-        if rho0_GB < 0.5: #depressed state
-            # g_d = g0
+        if rho0_GB < 0.5:
             return AMPA_g_peak
         else:
-            # g_d = g0 / pot_factor
             return AMPA_g_peak / g_AMPA_pot_factor
-
-
+    
+    
     function g_AMPA_pot_fun() nS:
-        if rho0_GB < 0.5: #potentiated state
-            # g_p = pot_factor * g0
+        if rho0_GB < 0.5:
             return g_AMPA_pot_factor * AMPA_g_peak
         else:
-            # g_p = g0
             return AMPA_g_peak
 
 
     function Use_depr_fun() real:
-        if rho0_GB < 0.5: #depressed state
-            # Use_d = Use_0
+        if rho0_GB < 0.5:
             return Use_0
         else:
-            # Use_d = Use_0**(1/v)
             return Use_0**(1/v)
 
 
     function Use_pot_fun() real:
-        if rho0_GB < 0.5: #potentiated state
-            # Use_p = Use_0**v
+        if rho0_GB < 0.5:
             return Use_0**v
         else:
-            # Use_p = Use_0
             return Use_0
+
+
+
+
 
 

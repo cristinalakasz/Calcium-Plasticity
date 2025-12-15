@@ -33,36 +33,62 @@ References
        Stable Hebbian learning from spike timing-dependent
        plasticity, Journal of Neuroscience, 20:23,8812--8821
 """
+
 synapse stdp:
+
+    ########################
+    # STATE VARIABLES
+    ########################
     state:
-        w real = 1.    @nest::weight   # Synaptic weight
-        x real = 1  # fraction of possible realisable vescicles
+        # Long-term (structural) synaptic weight.
+        # LTP/LTD is implemented in the neuron (via rho_GB -> g_AMPA_hat / Use),
+        # If later move LTP/LTD to the synapse, update w here.
+        w real = 1.0 @nest::weight
+
+        # Tsodyks-Markram: fraction of available vescicles
+        x real = 1.0
         
+        # Tsodyks-Markram: utilization / release probability
         u real = 0.5
         u_tsyn real = u
         
+        # Time of last presynaptic spike
         last_pre_spike ms = 0 ms
         
-        delta ms = 0 ms
-        N_rel real = 0.0
-        test real = 0
-
-    parameters:
-        d ms = 1 ms  @nest::delay   # Synaptic transmission dselay
-        Wmax real = 100.
-        Wmin real = 0.
+        # Debug / bookkeeping
+        N_rel real = 0.0          # deterministic released vesicles count (currently not used downstream)
+        test real = 0             # currently used to mantain onReceive(post_spikes) without raising errors
         
-        tau_rec ms = 800 ms
-        tau_fac ms = 10 ms
+        
+    ########################
+    # PARAMETERS
+    ########################
+    parameters:
+        d ms = 1 ms @nest::delay  # transmission delay
+        
+        # (Unused placeholders from legacy STDP template)
+        Wmax real = 100.0
+        Wmin real = 0.0
+        
+        # TM time constants
+        tau_rec ms = 800 ms       # resource recovery time constant
+        tau_fac ms = 10 ms        # facilitation decay time constant
+        
+        # Vesicle release sites (only used to compute N_rel for future use)
         N_sites real = 5
         
         
-
+    ########################
+    # CONTINUOUS DYNAMICS
+    ########################
     equations:
-        
-        x' = (1-x) / tau_rec
-        
+        # Recovery of available resources between spikes
+        x' = (1.0 - x) / tau_rec
 
+
+    ########################
+    # I/O
+    ########################
     input:
         pre_spikes <- spike
         post_spikes <- spike
@@ -70,57 +96,47 @@ synapse stdp:
 
     output:
         spike
-        
+
+    
+    ########################
+    # POSTSYNAPTIC SPIKES
+    ########################
     onReceive(post_spikes):
+        # Currently not used for plasticity
         test += 1
-            
-
+        
+    
+    ########################
+    # PRESYNAPTIC SPIKES
+    ########################
     onReceive(pre_spikes):
-
-        # Delta
-        delta = t - last_pre_spike
+        # Inter-spike interval
+        inline delta ms = t - last_pre_spike
         if delta < 0 ms:
             delta = 0 ms
-                
-        #U
-        u = u_tsyn * exp(-(delta)/tau_fac) + Use_in * (1-u_tsyn*exp(-(delta)/tau_fac))
+            
+        # TM facilitation update:
+        # Use_in acts as the baseline utilization towards which u relaxes
+        u = u_tsyn * exp( - (delta)/tau_fac) + Use_in*(1 - u_tsyn*exp( - (delta)/tau_fac))
         
-        # release fraction for THIS spike (pre-depletion)
+        # Released fraction for this spike (before depletion)
         inline rel real = u * x
         
-        #Deterministic number of released vescicles (for future implementation in modifying the g of the neuron)
+        # Optional deterministic vesicle count (not used yet)
         N_rel = N_sites * rel
         
-        # weight delivered for THIS spike
+        # Effective synaptic efficacy delivered on this spike
         inline w_eff real = w * rel
         deliver_spike(w_eff, d)
         
-        # depletion: consume resources
-        x = x - rel          
+        # resource depletion at spike time
+        x = x - rel
         if x < 0.0:
             x = 0.0
-        
-        #Updates
+            
+        # Update state for next spike
         last_pre_spike = t
         u_tsyn = u
         
-        
-        
-        
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
